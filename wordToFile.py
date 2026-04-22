@@ -1,14 +1,13 @@
 import streamlit as st
-from docx2pdf import convert
 import tempfile
 import os
 import zipfile
+import subprocess
 
 st.set_page_config(page_title="Word to PDF Converter", layout="wide")
 
 st.title("📄 Word to PDF Converter")
 
-# Session state for uploaded files
 if "files" not in st.session_state:
     st.session_state.files = []
 
@@ -18,7 +17,7 @@ uploaded_files = st.file_uploader(
     accept_multiple_files=True
 )
 
-# Add new files
+# Add files
 if uploaded_files:
     for file in uploaded_files:
         if file.name not in [f.name for f in st.session_state.files]:
@@ -26,7 +25,7 @@ if uploaded_files:
 
 st.subheader("📂 Selected Files")
 
-# Show files with remove option
+# Remove option
 files_to_keep = []
 for i, file in enumerate(st.session_state.files):
     col1, col2 = st.columns([4, 1])
@@ -42,25 +41,38 @@ for i, file in enumerate(st.session_state.files):
 
 st.session_state.files = files_to_keep
 
-# Convert button
+# Convert
 if st.session_state.files:
     if st.button("🚀 Convert to PDF & Download ZIP"):
         with tempfile.TemporaryDirectory() as tmpdir:
             pdf_paths = []
 
             for file in st.session_state.files:
-                # Save uploaded file temporarily
                 input_path = os.path.join(tmpdir, file.name)
+
                 with open(input_path, "wb") as f:
                     f.write(file.getbuffer())
 
-                # Output PDF path
-                pdf_name = file.name.replace(".docx", ".pdf")
-                output_path = os.path.join(tmpdir, pdf_name)
+                # LibreOffice conversion
+                try:
+                    subprocess.run([
+                        "libreoffice",
+                        "--headless",
+                        "--convert-to", "pdf",
+                        "--outdir", tmpdir,
+                        input_path
+                    ], check=True)
 
-                # Convert
-                convert(input_path, output_path)
-                pdf_paths.append(output_path)
+                    pdf_name = file.name.replace(".docx", ".pdf")
+                    pdf_path = os.path.join(tmpdir, pdf_name)
+
+                    if os.path.exists(pdf_path):
+                        pdf_paths.append(pdf_path)
+                    else:
+                        st.error(f"Conversion failed: {file.name}")
+
+                except Exception as e:
+                    st.error(f"Error converting {file.name}: {e}")
 
             # Create ZIP
             zip_path = os.path.join(tmpdir, "converted_pdfs.zip")
@@ -68,13 +80,12 @@ if st.session_state.files:
                 for pdf in pdf_paths:
                     zipf.write(pdf, os.path.basename(pdf))
 
-            # Download button
             with open(zip_path, "rb") as f:
                 st.download_button(
-                    label="📥 Download ZIP",
-                    data=f,
-                    file_name="converted_pdfs.zip",
-                    mime="application/zip"
+                    "📥 Download ZIP",
+                    f,
+                    "converted_pdfs.zip",
+                    "application/zip"
                 )
 else:
-    st.info("Upload at least one Word file to proceed.")
+    st.info("Upload at least one Word file.")
